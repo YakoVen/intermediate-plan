@@ -13,9 +13,6 @@ const firebaseConfig = {
 };
 
 let _app: FirebaseApp | null = null;
-let _db: Firestore | null = null;
-let _auth: Auth | null = null;
-let _storage: FirebaseStorage | null = null;
 
 function getApp(): FirebaseApp {
   if (!_app) {
@@ -24,25 +21,13 @@ function getApp(): FirebaseApp {
   return _app;
 }
 
-export const db: Firestore = new Proxy({} as Firestore, {
-  get(_, prop) {
-    if (!_db) _db = getFirestore(getApp());
-    return Reflect.get(_db, prop);
-  },
-});
-
-export const auth: Auth = new Proxy({} as Auth, {
-  get(_, prop) {
-    if (!_auth) _auth = getAuth(getApp());
-    return Reflect.get(_auth, prop);
-  },
-});
-
-export const storage: FirebaseStorage = new Proxy({} as FirebaseStorage, {
-  get(_, prop) {
-    if (!_storage) _storage = getStorage(getApp());
-    return Reflect.get(_storage, prop);
-  },
-});
+// NOTE: these used to be Proxy objects for lazy init, but the Firestore/Auth
+// SDKs validate arguments with instanceof checks that a Proxy fails, so every
+// doc()/collection() call threw "Expected first argument to be ...". Eager
+// init is side-effect free (no network until first read/write).
+const _appInstance = getApp();
+export const db: Firestore = getFirestore(_appInstance);
+export const auth: Auth = getAuth(_appInstance);
+export const storage: FirebaseStorage = getStorage(_appInstance);
 
 export default getApp;

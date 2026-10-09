@@ -2,6 +2,7 @@
 
 import { createOrder, createFailedOrder, saveAbandonedCart, updateAbandonedCartStatus, validateCoupon, incrementCouponUsage } from '@/service/firebase/database';
 import { CartItem } from '@/interfaces/order';
+import { validateAddress, validatePhone, resolveShipCode } from '@/service/shipping/wilaya-data';
 
 export async function createOrderAction(formData: FormData) {
   try {
@@ -14,7 +15,6 @@ export async function createOrderAction(formData: FormData) {
     const deliveryMethod = formData.get('deliveryMethod') as 'home' | 'desk';
     const items: CartItem[] = JSON.parse(formData.get('items') as string);
     const subtotal = Number(formData.get('subtotal') || 0);
-    const deliveryFee = Number(formData.get('deliveryFee') || 0);
     const discount = Number(formData.get('discount') || 0);
     const couponCode = formData.get('couponCode') as string || undefined;
     const discountId = formData.get('discountId') as string || undefined;
@@ -22,14 +22,68 @@ export async function createOrderAction(formData: FormData) {
     const userId = formData.get('userId') as string || undefined;
     const sessionId = formData.get('sessionId') as string || undefined;
 
+    // DzShip address fields. The numeric code is authoritative; the names are
+    // display-only and must not be trusted for courier routing.
+    const wilayaCode = Number(formData.get('wilayaCode'));
+    const communeName = (formData.get('communeName') as string) || commune;
+    const stopDeskId = (formData.get('stopDeskId') as string) || undefined;
+    const stopDeskName = (formData.get('stopDeskName') as string) || undefined;
+    const returnFee = Number(formData.get('returnFee') || 0);
+
     if (!name || !phone || !wilaya || !items?.length) {
       return { success: false, error: 'Champs requis manquants' };
     }
 
-    const phoneClean = phone.replace(/\s/g, '');
-    if (!/^0[5-7]\d{8}$/.test(phoneClean)) {
-      return { success: false, error: 'Numéro de téléphone invalide' };
+    if (!Number.isInteger(wilayaCode) || wilayaCode < 1 || wilayaCode > 69) {
+      return { success: false, error: 'Wilaya invalide' };
     }
+
+    // Validate the commune the way the courier will, before anything is stored.
+    const addressCheck = validateAddress(wilayaCode, communeName);
+    if (!addressCheck.ok) {
+      return { success: false, error: addressCheck.error };
+    }
+
+    const phoneCheck = validatePhone(phone);
+    if (!phoneCheck.ok) {
+      return { success: false, error: phoneCheck.error };
+    }
+    const phoneClean = phoneCheck.phone;
+
+    if (deliveryMethod === 'desk' && !stopDeskId) {
+      return { success: false, error: 'Point de relais requis' };
+    }
+
+    // Never trust the client's delivery fee: it is a price the customer pays
+    // the courier, and a tampered value means shipping below cost. Recompute
+    // server-side when we can, and fall back to the submitted value only if the
+    // gateway is unavailable.
+    let deliveryFee = Number(formData.get('deliveryFee') || 0);
+    let verifiedDeliveryFee: number | null = null;
+    let verifiedReturnFee = 0;
+    try {
+      const { quoteRate, getDefaultCourier } = await import('@/service/shipping/dzship');
+      const quote = await quoteRate(
+        {
+          toWilaya: resolveShipCode(wilayaCode),
+          toCommune: communeName,
+          deliveryType: deliveryMethod === 'desk' ? 'stopdesk' : 'home',
+        },
+        getDefaultCourier()
+      );
+      verifiedDeliveryFee = quote.deliveryFee;
+      verifiedReturnFee = quote.returnFee;
+    } catch {
+      // Gateway unavailable. Accept the submitted fee rather than block the
+      // sale; the courier rejects the parcel later if it is wrong.
+    }
+
+    if (verifiedDeliveryFee !== null) {
+      deliveryFee = verifiedDeliveryFee;
+    } else if (!Number.isFinite(deliveryFee) || deliveryFee < 0) {
+      return { success: false, error: 'Frais de livraison invalides' };
+    }
+    const finalReturnFee = verifiedReturnFee || returnFee;
 
     // Validate + increment coupon usage
     if (couponCode) {
@@ -45,19 +99,33 @@ export async function createOrderAction(formData: FormData) {
       email,
       userId,
       wilaya,
-      commune,
+      commune: communeName,
       address,
       deliveryMethod,
       items,
       subtotal,
       deliveryFee,
+      quotedDeliveryFee: deliveryFee,
+      returnFee: finalReturnFee,
       discount,
       couponCode,
       discountId,
-      total,
+      // Recomputed from the server-verified fee, so the stored total is the
+      // amount the courier will actually ask for at the door.
+      total: Math.max(0, subtotal - discount + deliveryFee),
       state: 0,
       date: new Date().toISOString(),
-      trackingHistory: [{ status: 0, timestamp: new Date().toISOString(), note: 'Commande passée' }],
+      // DzShip address fields, resolved to what the courier accepts.
+      wilayaCode,
+      wilayaShipCode: resolveShipCode(wilayaCode),
+      communeName,
+      stopDeskId,
+      stopDeskName,
+      // What the driver collects.
+      codAmount: Math.max(0, subtotal - discount + deliveryFee),
+      trackingHistory: [
+        { status: 'created', timestamp: new Date().toISOString(), note: 'Commande enregistrée' },
+      ],
     });
 
     // Mark abandoned cart session as recovered
@@ -146,6 +214,10 @@ export async function createFailedOrderAction(data: {
       date: new Date().toISOString(),
       type: 'failed',
       failureReason: data.failureReason,
+      // Same status vocabulary as real orders, so dashboards can group them.
+      trackingHistory: [
+        { status: 'created', timestamp: new Date().toISOString(), note: 'Commande échouée' },
+      ],
     });
 
     // Alert admin (non-blocking)

@@ -1,28 +1,58 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Save } from 'lucide-react';
+import { getSetting, setSetting } from '@/service/firebase/database';
+import toast from 'react-hot-toast';
+
+interface StoreSettings {
+  storeName: string;
+  contactPhone: string;
+  contactEmail: string;
+  adminEmail: string;
+  facebookUrl: string;
+  instagramUrl: string;
+  address: string;
+}
+
+const DEFAULTS: StoreSettings = {
+  storeName: '',
+  contactPhone: '',
+  contactEmail: '',
+  adminEmail: '',
+  facebookUrl: '',
+  instagramUrl: '',
+  address: '',
+};
 
 export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
-  const [formData, setFormData] = useState({
-    storeName: 'Mon Super Store',
-    contactPhone: '0555123456',
-    contactEmail: 'contact@store.dz',
-    adminEmail: 'admin@store.dz', // Used for Resend notifications
-    facebookUrl: 'https://facebook.com/',
-    instagramUrl: 'https://instagram.com/',
-    address: 'Alger, Centre'
-  });
+  const [loading, setLoading] = useState(true);
+  const [formData, setFormData] = useState<StoreSettings>(DEFAULTS);
 
-  const handleSave = (e: React.FormEvent) => {
+  useEffect(() => {
+    getSetting<StoreSettings>('store', DEFAULTS)
+      .then(setFormData)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    setTimeout(() => {
+    try {
+      await setSetting('store', formData);
+      toast.success('Paramètres enregistrés');
+    } catch {
+      toast.error('Erreur de sauvegarde');
+    } finally {
       setIsSaving(false);
-      alert('Paramètres enregistrés (Mock)');
-    }, 1000);
+    }
   };
+
+  if (loading) {
+    return <div className="h-40 bg-gray-100 rounded-xl animate-pulse max-w-3xl" />;
+  }
 
   return (
     <div className="max-w-3xl space-y-6">

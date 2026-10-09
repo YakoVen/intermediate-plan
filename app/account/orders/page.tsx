@@ -2,61 +2,40 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { PackageX, ChevronRight, Package } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { getOrdersByUser } from '@/service/firebase/database';
+import { Order } from '@/interfaces/order';
 
-// Mock data
-const mockOrders = [
-  {
-    id: 'CMD-8492',
-    date: '12 Oct 2023',
-    total: 12500,
-    status: 'Livré',
-    statusColor: 'bg-green-100 text-green-800',
-    itemCount: 3,
-    images: ['/images/product1.jpg', '/images/product2.jpg', '/images/product3.jpg']
-  },
-  {
-    id: 'CMD-8411',
-    date: '05 Sep 2023',
-    total: 8900,
-    status: 'En cours',
-    statusColor: 'bg-yellow-100 text-yellow-800',
-    itemCount: 1,
-    images: ['/images/product4.jpg']
-  }
+const stateLabels = ['En attente', 'Confirmée', 'Expédiée', 'Livrée'];
+const stateColors = [
+  'bg-orange-100 text-orange-700',
+  'bg-blue-100 text-blue-700',
+  'bg-purple-100 text-purple-700',
+  'bg-green-100 text-green-700',
 ];
 
-interface OrderRow {
-  id: string;
-  date: string;
-  total: number;
-  status: string;
-  statusColor: string;
-  itemCount: number;
-  images: string[];
-}
-
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const router = useRouter();
+  const { currentUser, loading: authLoading } = useAuth();
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate fetching from /api/account/orders
-    const fetchOrders = async () => {
-      setTimeout(() => {
-        setOrders(mockOrders);
-        setLoading(false);
-      }, 800);
-    };
-    fetchOrders();
-  }, []);
+    if (authLoading) return;
+    if (!currentUser) {
+      router.push('/login');
+      return;
+    }
+    getOrdersByUser(currentUser.uid)
+      .then((o) => setOrders(o.filter((x) => x.type !== 'failed')))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [currentUser, authLoading, router]);
 
-  if (loading) {
-    return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-      </div>
-    );
+  if (loading || authLoading) {
+    return <div className="space-y-4">{[...Array(3)].map((_, i) => <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />)}</div>;
   }
 
   if (orders.length === 0) {
@@ -69,9 +48,9 @@ export default function OrdersPage() {
         <p className="text-gray-500 mb-8 max-w-md">
           Vous n&apos;avez pas encore passé de commande. Découvrez nos produits et commencez vos achats !
         </p>
-        <Link 
-          href="/boutique" 
-          className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-xl shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
+        <Link
+          href="/articles"
+          className="inline-flex items-center px-6 py-3 text-base font-medium rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
         >
           Découvrir la boutique
         </Link>
@@ -81,47 +60,51 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Mes Commandes</h1>
-      
+      <h1 className="text-2xl font-bold text-gray-900">Mes Commandes ({orders.length})</h1>
+
       <div className="space-y-4">
         {orders.map((order) => (
           <div key={order.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:border-indigo-200 transition-colors">
             <div className="p-6 border-b border-gray-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center space-x-3 mb-1">
-                  <span className="font-bold text-lg text-gray-900">{order.id}</span>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${order.statusColor}`}>
-                    {order.status}
+                  <span className="font-bold text-lg text-gray-900">#{order.id.substring(0, 8)}</span>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${stateColors[order.state] ?? 'bg-gray-100 text-gray-600'}`}>
+                    {stateLabels[order.state] ?? ''}
                   </span>
                 </div>
-                <p className="text-sm text-gray-500">Passée le {order.date}</p>
+                <p className="text-sm text-gray-500">Passée le {order.date ? order.date.slice(0, 10) : ''}</p>
               </div>
               <div className="text-left sm:text-right">
                 <p className="text-sm text-gray-500 mb-1">Total</p>
-                <p className="font-bold text-lg text-gray-900">{order.total} DA</p>
+                <p className="font-bold text-lg text-gray-900">{order.total.toLocaleString()} DA</p>
               </div>
             </div>
-            
+
             <div className="p-6 bg-gray-50 flex items-center justify-between">
               <div className="flex items-center space-x-4">
                 <div className="flex -space-x-3 overflow-hidden">
-                  {order.images.slice(0, 3).map((img: string, idx: number) => (
-                    <div key={idx} className="inline-block h-12 w-12 rounded-lg border-2 border-white bg-gray-200 flex items-center justify-center">
-                      <Package className="h-6 w-6 text-gray-400" />
+                  {order.items.slice(0, 3).map((item, i) => (
+                    <div key={i} className="inline-block h-12 w-12 rounded-lg border-2 border-white bg-gray-200 overflow-hidden">
+                      {item.thumbnail ? (
+                        <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center"><Package className="h-6 w-6 text-gray-400" /></div>
+                      )}
                     </div>
                   ))}
-                  {order.itemCount > 3 && (
+                  {order.items.length > 3 && (
                     <div className="inline-flex items-center justify-center h-12 w-12 rounded-lg border-2 border-white bg-gray-100 text-xs font-medium text-gray-600">
-                      +{order.itemCount - 3}
+                      +{order.items.length - 3}
                     </div>
                   )}
                 </div>
                 <span className="text-sm font-medium text-gray-600">
-                  {order.itemCount} article{order.itemCount > 1 ? 's' : ''}
+                  {order.items.reduce((s, i) => s + i.quantity, 0)} article{order.items.reduce((s, i) => s + i.quantity, 0) > 1 ? 's' : ''}
                 </span>
               </div>
-              
-              <Link 
+
+              <Link
                 href={`/account/orders/${order.id}`}
                 className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-500 bg-white px-4 py-2 border border-gray-200 rounded-lg shadow-sm"
               >

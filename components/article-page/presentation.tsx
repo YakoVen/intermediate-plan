@@ -68,7 +68,7 @@ export default function Presentation({ article, relatedArticles }: { article: Ar
 
   const copyLink = () => {
     navigator.clipboard.writeText(window.location.href);
-    alert('Lien copié !');
+    toast.success('Lien copié !');
   };
 
   const handleWhatsApp = () => {

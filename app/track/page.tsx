@@ -2,9 +2,27 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Search, Package, CheckCircle2, Truck, Home } from 'lucide-react';
+import { Search, Package, CheckCircle2, Truck, Home, AlertTriangle, RefreshCw } from 'lucide-react';
 import { getOrderById } from '@/service/firebase/database';
-import { CartItem } from '@/interfaces/order';
+import { CartItem, TrackingEntry } from '@/interfaces/order';
+import {
+  getStatusLabel,
+  getStatusTone,
+  isNegativeOutcome,
+  pipelineIndex,
+} from '@/service/shipping/status-map';
+
+/**
+ * Public order tracking.
+ *
+ * Two data sources, by design:
+ *  - the order doc (items, totals, stored `trackingHistory`) — always available
+ *  - the courier, via POST /api/shipping/track — only once shipped
+ *
+ * The live call refreshes the order's stored status server-side, so the admin
+ * sees the same state the customer does. It runs on explicit lookup, not on a
+ * timer: the gateway allows 60 tracking calls/minute/IP.
+ */
 
 const steps = [
   { id: 'pending', label: 'En attente', icon: Package },
@@ -23,6 +41,13 @@ interface TrackingData {
   deliveryMethod: string;
   history: { date: string; note: string }[];
   items: CartItem[];
+  trackingNumber?: string;
+  courier?: string;
+  courierStatus?: string;
+  courierLabel?: string;
+  courierTone?: string;
+  liveEvents?: { status: string; label: string; timestamp: string }[];
+  liveError?: string;
 }
 
 export default function TrackPage() {
@@ -41,10 +66,18 @@ function TrackContent() {
   const [trackingData, setTrackingData] = useState<TrackingData | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (initialId) handleTrack();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialId]);
+
+  const entryLabel = (h: TrackingEntry): string => {
+    if (h.note) return h.note;
+    if (typeof h.status === 'number') return stateToStatus[h.status] ?? `Statut ${h.status}`;
+    return getStatusLabel(h.status).fr;
+  };
 
   const handleTrack = async () => {
     if (!orderId.trim() || loading) return;
@@ -57,16 +90,56 @@ function TrackContent() {
         setError(true);
         return;
       }
-      const status = stateToStatus[order.state] ?? 'pending';
-      setTrackingData({
+
+      const base: TrackingData = {
         id: order.id,
-        status,
+        status: stateToStatus[order.state] ?? 'pending',
         total: order.total,
         wilaya: order.wilaya,
         deliveryMethod: order.deliveryMethod,
-        history: (order.trackingHistory ?? []).map((h) => ({ date: h.timestamp, note: h.note ?? '' })),
+        history: (order.trackingHistory ?? []).map((h) => ({ date: h.timestamp, note: entryLabel(h) })),
         items: order.items,
-      });
+        trackingNumber: order.trackingNumber,
+        courier: order.courier,
+        courierStatus: order.courierStatus,
+      };
+
+      // Live courier status when a parcel exists. Failure is non-fatal:
+      // the stored snapshot is still shown.
+      if (order.trackingNumber) {
+        try {
+          const res = await fetch('/api/shipping/track', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId: order.id }),
+          });
+          const data = await res.json();
+          if (res.ok && data.shipped) {
+            const label = getStatusLabel(data.status);
+            base.courierStatus = data.status;
+            base.courierLabel = label.fr;
+            base.courierTone = getStatusTone(data.status);
+            base.liveEvents = (data.events ?? []).map(
+              (e: { status: string; timestamp: string }) => ({
+                status: e.status,
+                label: getStatusLabel(e.status).fr,
+                timestamp: e.timestamp,
+              })
+            );
+            // Live status wins over the stored admin state for the pipeline.
+            const liveIdx = pipelineIndex(data.status);
+            if (liveIdx >= 0) {
+              base.status = ['pending', 'confirmed', 'shipped', 'shipped', 'delivered'][liveIdx];
+            }
+          } else if (!res.ok) {
+            base.liveError = data.error || 'Suivi transporteur indisponible.';
+          }
+        } catch {
+          base.liveError = 'Suivi transporteur indisponible.';
+        }
+      }
+
+      setTrackingData(base);
     } catch {
       setTrackingData(null);
       setError(true);
@@ -75,28 +148,39 @@ function TrackContent() {
     }
   };
 
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    await handleTrack();
+    setRefreshing(false);
+  };
+
   const getStepIndex = (status: string) => {
     return steps.findIndex(s => s.id === status);
   };
+
+  const showAttemptedAlert = trackingData?.courierStatus === 'delivery_attempted';
+  const showNegativeAlert =
+    trackingData?.courierStatus && isNegativeOutcome(trackingData.courierStatus);
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
       <div className="text-center space-y-4 mb-12">
         <h1 className="text-3xl font-bold text-gray-900">Suivre ma commande</h1>
         <p className="text-gray-500">Entrez votre numéro de commande pour suivre l&apos;état de la livraison.</p>
-        
+
         <div className="max-w-md mx-auto flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <input 
-              type="text" 
-              placeholder="Ex: ORDER123" 
+            <input
+              type="text"
+              placeholder="Ex: ORDER123"
               value={orderId}
               onChange={(e) => setOrderId(e.target.value)}
               className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-600 outline-none"
             />
           </div>
-          <button 
+          <button
             onClick={handleTrack}
             disabled={loading}
             className="px-6 py-3 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 transition disabled:opacity-50"
@@ -114,6 +198,61 @@ function TrackContent() {
 
       {trackingData && (
         <div className="space-y-8">
+          {/* Courier status banner */}
+          {trackingData.trackingNumber && trackingData.courierLabel && (
+            <div
+              className={`p-4 rounded-xl flex items-center justify-between gap-3 ${
+                trackingData.courierTone === 'success'
+                  ? 'bg-green-50 text-green-800'
+                  : trackingData.courierTone === 'warning'
+                    ? 'bg-amber-50 text-amber-800'
+                    : trackingData.courierTone === 'danger'
+                      ? 'bg-red-50 text-red-700'
+                      : 'bg-blue-50 text-blue-800'
+              }`}
+            >
+              <div>
+                <p className="font-medium">
+                  Colis {trackingData.trackingNumber} — {trackingData.courierLabel}
+                </p>
+                {trackingData.courier && (
+                  <p className="text-xs opacity-80">Transporteur : {trackingData.courier}</p>
+                )}
+              </div>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                title="Actualiser le suivi"
+                className="p-2 rounded-lg hover:bg-white/50 transition disabled:opacity-50"
+              >
+                <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+              </button>
+            </div>
+          )}
+
+          {showAttemptedAlert && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl flex items-start gap-2">
+              <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+              <p className="text-sm">
+                Le transporteur a tenté la livraison sans succès. Contactez la boutique
+                rapidement pour reprogrammer et éviter le retour du colis.
+              </p>
+            </div>
+          )}
+
+          {showNegativeAlert && (
+            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl flex items-start gap-2">
+              <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+              <p className="text-sm">
+                Statut : {trackingData.courierLabel}. Contactez la boutique pour la suite.
+              </p>
+            </div>
+          )}
+
+          {trackingData.liveError && (
+            <p className="text-xs text-gray-500 text-center">{trackingData.liveError} Affichage du dernier statut connu.</p>
+          )}
+
           <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm">
             <div className="flex justify-between items-center mb-8">
               <div>
@@ -125,11 +264,11 @@ function TrackContent() {
             {/* Pipeline */}
             <div className="relative">
               <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-gray-100 rounded-full"></div>
-              <div 
+              <div
                 className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-indigo-600 rounded-full transition-all duration-500"
                 style={{ width: `${(getStepIndex(trackingData.status) / (steps.length - 1)) * 100}%` }}
               ></div>
-              
+
               <div className="relative flex justify-between">
                 {steps.map((step, index) => {
                   const isActive = getStepIndex(trackingData.status) === index;
@@ -153,15 +292,32 @@ function TrackContent() {
                 })}
               </div>
             </div>
+
+            {/* Live courier pipeline positions (informational) */}
+            {trackingData.courierStatus && (
+              <p className="mt-6 text-center text-sm text-gray-600">
+                Suivi transporteur : <span className="font-medium text-gray-900">{trackingData.courierLabel ?? trackingData.courierStatus}</span>
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4">
               <h3 className="font-bold text-gray-900">Historique</h3>
               <div className="space-y-4">
+                {/* Live courier events first when available, then the order log. */}
+                {(trackingData.liveEvents ?? []).map((e, i: number) => (
+                  <div key={`live-${i}`} className="flex gap-4">
+                    <div className="w-2 h-2 mt-2 rounded-full bg-indigo-600 flex-shrink-0"></div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{e.label}</p>
+                      <p className="text-xs text-gray-500">{e.timestamp}</p>
+                    </div>
+                  </div>
+                ))}
                 {trackingData.history.map((h, i: number) => (
                   <div key={i} className="flex gap-4">
-                    <div className="w-2 h-2 mt-2 rounded-full bg-indigo-600 flex-shrink-0"></div>
+                    <div className="w-2 h-2 mt-2 rounded-full bg-gray-300 flex-shrink-0"></div>
                     <div>
                       <p className="text-sm font-medium text-gray-900">{h.note}</p>
                       <p className="text-xs text-gray-500">{h.date}</p>
@@ -176,6 +332,9 @@ function TrackContent() {
               <div className="space-y-2 text-sm text-gray-600">
                 <p><span className="font-medium text-gray-900">Wilaya:</span> {trackingData.wilaya}</p>
                 <p><span className="font-medium text-gray-900">Mode:</span> {trackingData.deliveryMethod === 'home' ? 'À domicile' : 'Point relais'}</p>
+                {trackingData.trackingNumber && (
+                  <p><span className="font-medium text-gray-900">N° de suivi:</span> {trackingData.trackingNumber}</p>
+                )}
                 <div className="pt-4 border-t border-gray-100">
                   <h4 className="font-medium text-gray-900 mb-2">Articles</h4>
                   {trackingData.items.map((item, i: number) => (
