@@ -3,7 +3,7 @@
 import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Heart, ShoppingBag } from 'lucide-react';
+import { Heart, ShoppingBag, Star } from 'lucide-react';
 import { useCart } from '@/contexts/CartContext';
 import { useWishlist } from '@/contexts/WishlistContext';
 import { Article } from '@/interfaces/article';
@@ -19,6 +19,8 @@ export default function ItemCard({ article }: ItemCardProps) {
   const isLiked = isInWishlist(article.id);
   const discount = article.oldPrice ? Math.round(((article.oldPrice - article.price) / article.oldPrice) * 100) : 0;
   const stock = article.totalStock ?? 1;
+  const rating = article.rating ?? 0;
+  const ratingsCount = article.ratingsCount ?? 0;
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -44,22 +46,22 @@ export default function ItemCard({ article }: ItemCardProps) {
 
   return (
     <Link href={`/articles/${article.id}`} className="group block h-full">
-      <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-300 border border-gray-100 h-full flex flex-col overflow-hidden relative">
-        
+      <div className="bg-white rounded-2xl hover:shadow-lg transition-all duration-300 border border-line h-full flex flex-col overflow-hidden relative">
+
         {/* Badges */}
-        <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
+        <div className="absolute top-3 left-3 z-10 flex flex-col items-start gap-2">
           {discount > 0 && (
             <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-md shadow-sm">
               -{discount}%
             </span>
           )}
           {stock === 0 ? (
-            <span className="bg-gray-800 text-white text-xs font-bold px-2 py-1 rounded-md shadow-sm">
+            <span className="bg-ink text-white text-xs font-bold px-2 py-1 rounded-md shadow-sm">
               Rupture
             </span>
           ) : stock < 10 ? (
-            <span className="bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-md shadow-sm">
-              Stock Faible
+            <span className="bg-stock text-white text-xs font-bold px-2 py-1 rounded-md shadow-sm">
+              Stock limité
             </span>
           ) : null}
         </div>
@@ -84,34 +86,36 @@ export default function ItemCard({ article }: ItemCardProps) {
 
         {/* Content */}
         <div className="p-4 flex flex-col flex-grow">
-          {article.hasVariants && (
-            <span className="text-xs font-medium text-indigo-600 mb-1 inline-block">
-              Plusieurs options
-            </span>
-          )}
-          <h3 className="font-semibold text-gray-900 line-clamp-2 mb-2 group-hover:text-indigo-600 transition-colors">
+          <h3 className="font-semibold text-ink line-clamp-1 mb-1 group-hover:text-blueprint transition-colors">
             {article.title}
           </h3>
-          
+          {ratingsCount > 0 && (
+            <div className="flex items-center gap-1 mb-2">
+              <Star size={14} className="fill-yellow-400 text-yellow-400" />
+              <span className="text-xs font-medium text-slate2">{rating.toFixed(1)} ({ratingsCount})</span>
+            </div>
+          )}
+
           <div className="mt-auto flex items-end justify-between">
             <div>
+              <span className="text-lg font-bold text-blueprint">
+                {article.price.toLocaleString('fr-DZ')} DA
+              </span>
               {article.oldPrice && (
-                <span className="text-sm text-gray-400 line-through block">
-                  {article.oldPrice} DA
+                <span className="text-xs text-slate2 line-through block">
+                  {article.oldPrice.toLocaleString('fr-DZ')} DA
                 </span>
               )}
-              <span className="text-lg font-bold text-gray-900">
-                {article.price} DA
-              </span>
             </div>
-            
-            <button 
+
+            <button
               onClick={handleAddToCart}
               disabled={stock === 0}
+              aria-label="Ajouter au panier"
               className={`p-2.5 rounded-xl shadow-sm transition-all ${
-                stock === 0 
+                stock === 0
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white'
+                  : 'bg-blueprint-light text-blueprint hover:bg-blueprint hover:text-white'
               }`}
             >
               <ShoppingBag size={20} />

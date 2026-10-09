@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Heart, Minus, Plus, Share2, ShoppingCart, MessageCircle } from 'lucide-react';
+import Link from 'next/link';
+import { Heart, Minus, Plus, Share2, ShoppingCart, MessageCircle, Star } from 'lucide-react';
 import { useCart } from '@/contexts/CartContext';
 import { useWishlist } from '@/contexts/WishlistContext';
 import toast from 'react-hot-toast';
@@ -25,9 +26,11 @@ interface ArticleShape {
   description?: string;
   oldPrice?: number;
   discount?: number;
+  rating?: number;
+  ratingsCount?: number;
 }
 
-export default function Presentation({ article, relatedArticles }: { article: ArticleShape, relatedArticles: { id: string; title: string }[] }) {
+export default function Presentation({ article, relatedArticles }: { article: ArticleShape, relatedArticles: { id: string; title: string; thumbnail?: string; price: number }[] }) {
   const { addItem } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
   const [selectedImage, setSelectedImage] = useState(article.images?.[0] || '');
@@ -76,7 +79,16 @@ export default function Presentation({ article, relatedArticles }: { article: Ar
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 space-y-16">
+    <div className="container mx-auto px-4 py-8 space-y-12">
+      {/* Breadcrumbs */}
+      <nav className="flex items-center gap-2 text-sm text-slate2">
+        <Link href="/" className="hover:text-blueprint">Accueil</Link>
+        <span>/</span>
+        <Link href="/articles" className="hover:text-blueprint">Boutique</Link>
+        <span>/</span>
+        <span className="text-ink font-medium truncate">{article.title}</span>
+      </nav>
+
       {/* Product Top Section */}
       <div className="flex flex-col lg:flex-row gap-12">
         {/* Images */}
@@ -91,7 +103,7 @@ export default function Presentation({ article, relatedArticles }: { article: Ar
           </div>
           <div className="flex gap-4 overflow-x-auto pb-2">
             {article.images?.map((img: string, i: number) => (
-              <button key={i} onClick={() => setSelectedImage(img)} className={`w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 border-2 ${selectedImage === img ? 'border-indigo-600' : 'border-transparent'}`}>
+              <button key={i} onClick={() => setSelectedImage(img)} className={`w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 border-2 ${selectedImage === img ? 'border-blueprint' : 'border-transparent'}`}>
                 <img src={img} alt="" className="w-full h-full object-cover" />
               </button>
             ))}
@@ -99,16 +111,31 @@ export default function Presentation({ article, relatedArticles }: { article: Ar
         </div>
 
         {/* Info */}
-        <div className="lg:w-1/2 space-y-8">
-          <div className="space-y-4">
-            <h1 className="text-3xl font-bold text-gray-900">{article.title}</h1>
-            <div className="flex items-center gap-4">
-              <span className="text-2xl font-bold text-indigo-600">{article.price} DA</span>
+        <div className="lg:w-1/2 space-y-6">
+          <div className="space-y-3">
+            {stock > 0 && stock <= 10 && (
+              <span className="inline-block bg-stock text-white text-xs font-bold px-2.5 py-1 rounded-md">
+                Stock limité
+              </span>
+            )}
+            <h1 className="text-3xl font-bold text-ink">{article.title}</h1>
+            {typeof article.rating === 'number' && (article.ratingsCount || 0) > 0 && (
+              <div className="flex items-center gap-2">
+                <div className="flex gap-0.5">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Star key={n} size={16} className={n <= Math.round(article.rating!) ? 'fill-yellow-400 text-yellow-400' : 'fill-gray-200 text-gray-200'} />
+                  ))}
+                </div>
+                <span className="text-sm text-slate2">({article.ratingsCount} avis)</span>
+              </div>
+            )}
+            <div className="flex items-center gap-3">
+              <span className="text-3xl font-bold text-blueprint">{article.price.toLocaleString('fr-DZ')} DA</span>
               {article.oldPrice && (
-                <span className="text-lg text-gray-400 line-through">{article.oldPrice} DA</span>
+                <span className="text-lg text-slate2 line-through">{article.oldPrice.toLocaleString('fr-DZ')} DA</span>
               )}
             </div>
-            
+
             <div className="flex items-center gap-2">
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${stock > 10 ? 'bg-green-100 text-green-700' : stock > 0 ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
                 {stock > 10 ? 'En stock' : stock > 0 ? 'Stock limité' : 'Rupture de stock'}
@@ -121,7 +148,7 @@ export default function Presentation({ article, relatedArticles }: { article: Ar
               <h3 className="font-medium text-gray-900">Variantes</h3>
               <div className="flex gap-2">
                 {article.variants.map((v: VariantShape) => (
-                  <button key={v.id} onClick={() => setSelectedVariant(v.id)} className={`px-4 py-2 rounded-xl border-2 ${selectedVariant === v.id ? 'border-indigo-600 text-indigo-600 bg-indigo-50' : 'border-gray-200 text-gray-700 hover:border-gray-300'}`}>
+                  <button key={v.id} onClick={() => setSelectedVariant(v.id)} className={`px-4 py-2 rounded-xl border-2 ${selectedVariant === v.id ? 'border-blueprint text-blueprint bg-blueprint-light' : 'border-line text-ink hover:border-slate2'}`}>
                     {v.name}
                   </button>
                 ))}
@@ -143,11 +170,11 @@ export default function Presentation({ article, relatedArticles }: { article: Ar
 
           <div className="flex flex-col sm:flex-row gap-4">
             <button onClick={handleAddToCart} disabled={isOOS}
-              className="flex-1 bg-indigo-600 text-white py-4 px-6 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition disabled:opacity-50">
+              className="flex-1 bg-blueprint text-white py-4 px-6 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blueprint-dark transition disabled:opacity-50">
               <ShoppingCart className="w-5 h-5" />
               {isOOS ? 'Rupture de stock' : 'Ajouter au panier'}
             </button>
-            <button className="flex-1 bg-green-500 text-white py-4 px-6 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-600 transition" onClick={handleWhatsApp}>
+            <button className="flex-1 bg-wa text-white py-4 px-6 rounded-xl font-bold flex items-center justify-center gap-2 hover:brightness-95 transition" onClick={handleWhatsApp}>
               <MessageCircle className="w-5 h-5" />
               Commander sur WhatsApp
             </button>
@@ -176,16 +203,28 @@ export default function Presentation({ article, relatedArticles }: { article: Ar
       <ReviewsSection articleId={article.id} />
 
       {/* Related Products */}
-      <div className="space-y-8">
-        <h2 className="text-2xl font-bold text-gray-900">Vous aimerez aussi</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {relatedArticles.map((prod) => (
-            <div key={prod.id} className="border border-gray-200 rounded-xl p-4">
-              {prod.title}
-            </div>
-          ))}
+      {relatedArticles.length > 0 && (
+        <div className="space-y-8">
+          <h2 className="text-2xl font-bold text-ink">Vous aimerez aussi</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+            {relatedArticles.map((prod) => (
+              <Link key={prod.id} href={`/articles/${prod.id}`} className="group bg-white border border-line rounded-2xl overflow-hidden hover:shadow-lg transition-all">
+                <div className="aspect-square bg-gray-50 overflow-hidden">
+                  {prod.thumbnail ? (
+                    <img src={prod.thumbnail} alt={prod.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate2 text-sm">Image</div>
+                  )}
+                </div>
+                <div className="p-4">
+                  <p className="font-semibold text-ink truncate group-hover:text-blueprint">{prod.title}</p>
+                  <p className="font-bold text-blueprint mt-1">{prod.price.toLocaleString('fr-DZ')} DA</p>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

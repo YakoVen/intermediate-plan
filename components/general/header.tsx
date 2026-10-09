@@ -25,58 +25,58 @@ export default function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-white border-b border-gray-100 shadow-sm">
+    <header className="sticky top-0 z-50 w-full bg-white border-b border-line shadow-sm">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button
-            className="md:hidden text-gray-700"
+            className="md:hidden text-ink"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
             {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
-          <Link href="/" className="text-2xl font-bold text-indigo-600 tracking-tight">
+          <Link href="/" className="text-2xl font-bold text-ink tracking-tight">
             Ma Boutique
           </Link>
         </div>
 
         <nav className="hidden md:flex items-center gap-8">
-          <Link href="/" className="text-gray-700 hover:text-indigo-600 font-medium transition-colors">
+          <Link href="/" className="text-ink hover:text-blueprint font-medium transition-colors">
             Accueil
           </Link>
-          <Link href="/articles" className="text-gray-700 hover:text-indigo-600 font-medium transition-colors">
+          <Link href="/articles" className="text-ink hover:text-blueprint font-medium transition-colors">
             Boutique
           </Link>
         </nav>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
           {isSearchOpen ? (
-            <form onSubmit={handleSearch} className="flex items-center bg-gray-100 rounded-full px-3 py-1">
+            <form onSubmit={handleSearch} className="flex items-center bg-paper border border-line rounded-full px-3 py-1">
               <input
                 type="text"
-                placeholder="Rechercher..."
-                className="bg-transparent border-none outline-none text-sm w-32 md:w-48"
+                placeholder="Rechercher un produit..."
+                className="bg-transparent border-none outline-none text-sm w-32 md:w-48 text-ink placeholder:text-slate2"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 autoFocus
               />
-              <button type="submit" className="text-gray-500 hover:text-indigo-600">
+              <button type="submit" className="text-slate2 hover:text-blueprint">
                 <Search size={18} />
               </button>
-              <button type="button" onClick={() => setIsSearchOpen(false)} className="ml-2 text-gray-400">
+              <button type="button" onClick={() => setIsSearchOpen(false)} className="ml-2 text-slate2">
                 <X size={16} />
               </button>
             </form>
           ) : (
-            <button onClick={() => setIsSearchOpen(true)} className="text-gray-700 hover:text-indigo-600 p-2">
+            <button onClick={() => setIsSearchOpen(true)} className="text-ink hover:text-blueprint p-2">
               <Search size={24} />
             </button>
           )}
 
-          <Link href={currentUser ? '/account' : '/login'} className="text-gray-700 hover:text-indigo-600 p-2">
+          <Link href={currentUser ? '/account' : '/login'} className="text-ink hover:text-blueprint p-2">
             <User size={24} />
           </Link>
 
-          <button onClick={() => setIsCartDrawerOpen(true)} className="text-gray-700 hover:text-indigo-600 p-2">
+          <button onClick={() => setIsCartDrawerOpen(true)} className="text-ink hover:text-blueprint p-2">
             <CartIcon />
           </button>
         </div>

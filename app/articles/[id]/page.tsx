@@ -19,7 +19,7 @@ export default async function ArticleDetail({ params }: { params: Promise<{ id: 
   const related = (await getArticles({ active: true }))
     .filter((a) => a.id !== raw.id && a.category === raw.category)
     .slice(0, 4)
-    .map((a) => ({ id: a.id, title: a.title }));
+    .map((a) => ({ id: a.id, title: a.title, thumbnail: a.thumbnail, price: a.price }));
 
   return <Presentation article={article} relatedArticles={related} />;
 }
